@@ -140,7 +140,7 @@ const App = () => {
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '24px', margin: 0 }}>C4U Events @ Stanford 🎓</h1>
+        <h1 style={{ fontSize: '24px', margin: 0 }}>C4U Relevant Events @ Stanford 🎓</h1>
         {name ? (
           <div>
             Hi, {name}! 👋
