@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 
 // Your Firebase config
 const firebaseConfig = {
@@ -112,6 +112,17 @@ const App = () => {
     }
   };
 
+  const handleDelete = async (eventId) => {
+    console.log("Deleting event:", eventId);
+    try {
+      await deleteDoc(doc(db, "events", eventId));
+      console.log("Event deleted successfully");
+    } catch (err) {
+      console.error("Error deleting event:", err);
+      setError("Failed to delete event: " + err.message);
+    }
+  };
+
   const formatTime = (time) => {
     if (!time) return '';
     try {
@@ -127,19 +138,6 @@ const App = () => {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      {/* Debug section */}
-      <div style={{ 
-        marginBottom: '20px', 
-        padding: '10px', 
-        background: '#f0f0f0', 
-        borderRadius: '4px' 
-      }}>
-        <p>Debug Info:</p>
-        <p>Loading: {loading ? 'Yes' : 'No'}</p>
-        <p>Error: {error || 'None'}</p>
-        <p>Events count: {events.length}</p>
-      </div>
-
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
         <h1 style={{ fontSize: '24px', margin: 0 }}>C4U Events @ Stanford 🎓</h1>
@@ -259,20 +257,37 @@ const App = () => {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px' }}>{event.title}</h3>
-                <button
-                  onClick={() => handleJoin(event.id)}
-                  disabled={event.attendees?.includes(name)}
-                  style={{
-                    padding: '8px 16px',
-                    background: event.attendees?.includes(name) ? '#dddddd' : '#4444ff',
-                    color: event.attendees?.includes(name) ? '#666666' : 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: event.attendees?.includes(name) ? 'default' : 'pointer'
-                  }}
-                >
-                  {event.attendees?.includes(name) ? "You're going! 🎉" : "Join in! 🤝"}
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => handleJoin(event.id)}
+                    disabled={event.attendees?.includes(name)}
+                    style={{
+                      padding: '8px 16px',
+                      background: event.attendees?.includes(name) ? '#dddddd' : '#4444ff',
+                      color: event.attendees?.includes(name) ? '#666666' : 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: event.attendees?.includes(name) ? 'default' : 'pointer'
+                    }}
+                  >
+                    {event.attendees?.includes(name) ? "You're going! 🎉" : "Join in! 🤝"}
+                  </button>
+                  {event.postedBy === name && (
+                    <button
+                      onClick={() => handleDelete(event.id)}
+                      style={{
+                        padding: '8px 16px',
+                        background: '#ff4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Delete 🗑️
+                    </button>
+                  )}
+                </div>
               </div>
               
               <div style={{ color: '#666666', marginBottom: '10px' }}>
