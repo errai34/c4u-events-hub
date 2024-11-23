@@ -163,7 +163,7 @@ const App = () => {
               cursor: 'pointer'
             }}
           >
-            Join the fun! 🎉
+            Join here! 🎉
           </button>
         )}
       </div>
