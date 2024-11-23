@@ -176,7 +176,7 @@ const App = () => {
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
         marginBottom: '20px'
       }}>
-        <h2 style={{ marginTop: 0 }}>Share a Learning Adventure! 🚀</h2>
+        <h2 style={{ marginTop: 0 }}>ML, so much ML? No, more.! 🚀</h2>
         <form onSubmit={handleAddEvent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <input
             type="text"
