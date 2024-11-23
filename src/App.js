@@ -125,27 +125,6 @@ const App = () => {
     }
   };
 
-  // Add test event function for debugging
-  const addTestEvent = async () => {
-    console.log("Adding test event...");
-    try {
-      const docRef = await addDoc(collection(db, "events"), {
-        title: "Test Event",
-        date: new Date().toISOString().split('T')[0],
-        time: "14:00",
-        location: "Test Location",
-        description: "This is a test event",
-        createdAt: new Date().toISOString(),
-        postedBy: "Test User",
-        attendees: ["Test User"]
-      });
-      console.log("Test event added successfully, id:", docRef.id);
-    } catch (err) {
-      console.error("Error adding test event:", err);
-      setError("Failed to add test event: " + err.message);
-    }
-  };
-
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
       {/* Debug section */}
@@ -159,20 +138,6 @@ const App = () => {
         <p>Loading: {loading ? 'Yes' : 'No'}</p>
         <p>Error: {error || 'None'}</p>
         <p>Events count: {events.length}</p>
-        <button
-          onClick={addTestEvent}
-          style={{
-            padding: '8px 16px',
-            background: '#4444ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            marginTop: '10px'
-          }}
-        >
-          Add Test Event
-        </button>
       </div>
 
       {/* Header */}
