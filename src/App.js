@@ -163,7 +163,7 @@ const App = () => {
               cursor: 'pointer'
             }}
           >
-            Join here! 🎉
+            Join here 🎉
           </button>
         )}
       </div>
@@ -270,7 +270,7 @@ const App = () => {
                       cursor: event.attendees?.includes(name) ? 'default' : 'pointer'
                     }}
                   >
-                    {event.attendees?.includes(name) ? "You're going! 🎉" : "Sign up! 🤝"}
+                    {event.attendees?.includes(name) ? "You're going! 🎉" : "Sign up 🤝"}
                   </button>
                   {event.postedBy === name && (
                     <button
