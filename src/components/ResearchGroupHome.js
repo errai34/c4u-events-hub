@@ -42,7 +42,7 @@ const ResearchGroupHome = () => {
           >
             <h2 className="text-xl font-semibold mb-4 text-gray-900">Upcoming Events</h2>
             <iframe 
-              src="https://c4u-events-hub.vercel.app"
+              src="/events"
               className="w-full h-[800px] border-0"
               title="Events Calendar"
             />
