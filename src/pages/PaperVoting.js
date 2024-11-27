@@ -155,34 +155,60 @@ const PaperVoting = () => {
     fetchPapers();
   }, []);
 
+  const handleSignIn = async () => {
+  try {
+    console.log('Starting sign in process...');
+    const result = await signInWithPopup(auth, googleProvider);
+    console.log('Sign in successful:', result.user.email);
+  } catch (error) {
+    console.error('Authentication error:', error);
+    if (error.code === 'auth/popup-closed-by-user') {
+      console.log('User closed the popup');
+    } else if (error.code === 'auth/unauthorized-domain') {
+      console.error('This domain is not authorized for OAuth operations');
+    }
+  }
+  };
+      
   const handleVote = async (paperId) => {
     if (!user) {
-      try {
-        await signInWithPopup(auth, googleProvider);
-      } catch (error) {
-        console.error('Error signing in:', error);
-        return;
-      }
-    }
-
-    if (userVotes[paperId]) {
-      return; // User has already voted for this paper
+        try {
+            await signInWithPopup(auth, googleProvider);
+        } catch (error) {
+            console.error('Error signing in:', error);
+            return;
+        }
     }
 
     try {
-      // Update paper votes
-      const paperRef = doc(db, 'paperVotes', paperId);
-      await updateDoc(paperRef, {
-        votes: increment(1)
-      });
-
-      // Update user's votes
-      const userVotesRef = doc(db, 'userVotes', user.uid);
-      await setDoc(userVotesRef, {
-        votes: { ...userVotes, [paperId]: true }
-      }, { merge: true });
+        const paperRef = doc(db, 'paperVotes', paperId);
+        const userVotesRef = doc(db, 'userVotes', user.uid);
+        
+        if (userVotes[paperId]) {
+            // Remove vote
+            await updateDoc(paperRef, {
+                votes: increment(-1)
+            });
+            
+            // Remove from user's votes
+            const updatedVotes = { ...userVotes };
+            delete updatedVotes[paperId];
+            await setDoc(userVotesRef, {
+                votes: updatedVotes
+            }, { merge: true });
+        } else {
+            // Add vote
+            await updateDoc(paperRef, {
+                votes: increment(1)
+            });
+            
+            // Add to user's votes
+            await setDoc(userVotesRef, {
+                votes: { ...userVotes, [paperId]: true }
+            }, { merge: true });
+        }
     } catch (error) {
-      console.error('Error voting:', error);
+        console.error('Error toggling vote:', error);
     }
   };
 
@@ -261,19 +287,18 @@ return (
                     {paper.justification}
                   </p>
                   <p className="text-sm text-gray-500">Suggested presenter(s): {paper.presenter}</p>
-                </div>
-                <button
-                  onClick={() => handleVote(paper.id)}
-                  disabled={userVotes[paper.id]}
-                  className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
-                    userVotes[paper.id] 
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                  }`}
-                >
-                  <span>{userVotes[paper.id] ? '✓' : '👍'}</span>
-                  <span>{votes[paper.id] || 0}</span>
-                </button>
+                  </div>
+		  <button
+	      onClick={() => handleVote(paper.id)}
+	      className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
+		  userVotes[paper.id] 
+		      ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
+		      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+	      }`}
+		  >
+		  <span>👍</span>
+		  <span>{votes[paper.id] || 0}</span>
+		  </button>
               </div>
             </div>
           ))}
