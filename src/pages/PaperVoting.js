@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, increment } from 'firebase/firestore';
+import { collection, doc, updateDoc, increment, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { signInWithPopup } from 'firebase/auth';
+import { db, auth, googleProvider } from '../firebase';
 
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxXQo_0Ntl_ooK93OF25w4BryPTyb8MtaixtJqQOEEvSdjSo_jGYZN9V3Xa8grjvR2/exec';
 const CORS_PROXY = 'https://corsproxy.io/?';
@@ -23,7 +25,23 @@ const formatAuthors = (authors) => {
 const PaperVoting = () => {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const db = getFirestore();
+  const [votes, setVotes] = useState({});
+  const [userVotes, setUserVotes] = useState({});
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setUser(user);
+      if (user) {
+        // Fetch user's votes
+        const userVotesRef = doc(db, 'userVotes', user.uid);
+        onSnapshot(userVotesRef, (doc) => {
+          setUserVotes(doc.exists() ? doc.data().votes || {} : {});
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const fetchArxivMetadata = async (arxivId) => {
     try {
@@ -81,12 +99,31 @@ const PaperVoting = () => {
   };
 
   useEffect(() => {
+    const votesRef = collection(db, 'paperVotes');
+    const unsubscribe = onSnapshot(votesRef, (snapshot) => {
+      const votesData = {};
+      snapshot.forEach((doc) => {
+        votesData[doc.id] = doc.data().votes || 0;
+      });
+      setVotes(votesData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+      
+  useEffect(() => {
     const fetchPapers = async () => {
       try {
         const response = await fetch(GOOGLE_SCRIPT_URL);
         const data = await response.json();
         
         const papersWithMetadata = await Promise.all(data.map(async (paper) => {
+          const voteRef = doc(db, 'paperVotes', paper.id);
+          const voteDoc = await getDoc(voteRef);
+          if (!voteDoc.exists()) {
+            await setDoc(voteRef, { votes: 0 });
+          }
+	    
           if (!paper.url.startsWith('http')) {
             return { ...paper, title: paper.url, authors: null };
           }
@@ -119,26 +156,90 @@ const PaperVoting = () => {
   }, []);
 
   const handleVote = async (paperId) => {
+    if (!user) {
+      try {
+        await signInWithPopup(auth, googleProvider);
+      } catch (error) {
+        console.error('Error signing in:', error);
+        return;
+      }
+    }
+
+    if (userVotes[paperId]) {
+      return; // User has already voted for this paper
+    }
+
     try {
+      // Update paper votes
       const paperRef = doc(db, 'paperVotes', paperId);
       await updateDoc(paperRef, {
         votes: increment(1)
       });
+
+      // Update user's votes
+      const userVotesRef = doc(db, 'userVotes', user.uid);
+      await setDoc(userVotesRef, {
+        votes: { ...userVotes, [paperId]: true }
+      }, { merge: true });
     } catch (error) {
       console.error('Error voting:', error);
     }
   };
 
-  return (
+  const renderVoteButton = (paper) => {
+    if (!user) {
+      return (
+        <button
+          onClick={() => handleVote(paper.id)}
+          className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100"
+        >
+          <span>👍</span>
+          <span>{votes[paper.id] || 0}</span>
+        </button>
+      );
+    }
+
+  const hasVoted = userVotes[paper.id];
+    return (
+      <button
+        onClick={() => handleVote(paper.id)}
+        disabled={hasVoted}
+        className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
+          hasVoted 
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+        }`}
+      >
+        <span>{hasVoted ? '✓' : '👍'}</span>
+        <span>{votes[paper.id] || 0}</span>
+      </button>
+    );
+  };
+
+return (
     <div className="p-6">
-      <h2 className="text-2xl font-bold mb-6">Paper Voting</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Paper Voting</h2>
+        {user ? (
+          <div className="text-sm text-gray-600">
+            Signed in as {user.email}
+          </div>
+        ) : (
+          <button
+            onClick={() => signInWithPopup(auth, googleProvider)}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            Sign in to vote
+          </button>
+        )}
+      </div>
       {loading ? (
         <p>Loading papers...</p>
       ) : papers.length === 0 ? (
         <p>No papers available for voting</p>
       ) : (
         <div className="grid gap-6">
-          {papers.sort((a, b) => b.votes - a.votes).map((paper) => (
+          {papers.sort((a, b) => (votes[b.id] || 0) - (votes[a.id] || 0)).map((paper) => (
             <div key={paper.id} className="bg-white rounded-lg shadow p-6 border">
               <div className="flex justify-between items-start">
                 <div className="flex-grow pr-6">
@@ -163,10 +264,15 @@ const PaperVoting = () => {
                 </div>
                 <button
                   onClick={() => handleVote(paper.id)}
-                  className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100"
+                  disabled={userVotes[paper.id]}
+                  className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
+                    userVotes[paper.id] 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                  }`}
                 >
-                  <span>👍</span>
-                  <span>{paper.votes || 0}</span>
+                  <span>{userVotes[paper.id] ? '✓' : '👍'}</span>
+                  <span>{votes[paper.id] || 0}</span>
                 </button>
               </div>
             </div>
@@ -175,6 +281,6 @@ const PaperVoting = () => {
       )}
     </div>
   );
-};
-
+  };
+      
 export default PaperVoting;
