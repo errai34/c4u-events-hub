@@ -118,11 +118,20 @@ const PaperVoting = () => {
         const data = await response.json();
         
         const papersWithMetadata = await Promise.all(data.map(async (paper) => {
-          const voteRef = doc(db, 'paperVotes', paper.id);
-          const voteDoc = await getDoc(voteRef);
-          if (!voteDoc.exists()) {
-            await setDoc(voteRef, { votes: 0 });
-          }
+	    const voteRef = doc(db, 'paperVotes', paper.id);
+	    const voteDoc = await getDoc(voteRef);
+	    if (!voteDoc.exists()) {
+		await setDoc(voteRef, { 
+		    votes: 0,
+		    initializedAt: new Date().toISOString()
+		});
+	    } else {
+		// Ensure existing vote count is a positive number
+		const currentVotes = voteDoc.data().votes;
+		if (typeof currentVotes !== 'number' || currentVotes < 0) {
+		    await updateDoc(voteRef, { votes: 0 });
+		}
+	    }
 	    
           if (!paper.url.startsWith('http')) {
             return { ...paper, title: paper.url, authors: null };
@@ -169,48 +178,49 @@ const PaperVoting = () => {
     }
   }
   };
-      
-  const handleVote = async (paperId) => {
-    if (!user) {
-        try {
-            await signInWithPopup(auth, googleProvider);
-        } catch (error) {
-            console.error('Error signing in:', error);
-            return;
-        }
-    }
+      const handleVote = async (paperId) => {
+	  if (!user) {
+              try {
+		  await signInWithPopup(auth, googleProvider);
+              } catch (error) {
+		  console.error('Error signing in:', error);
+		  return;
+              }
+	  }
 
-    try {
-        const paperRef = doc(db, 'paperVotes', paperId);
-        const userVotesRef = doc(db, 'userVotes', user.uid);
-        
-        if (userVotes[paperId]) {
-            // Remove vote
-            await updateDoc(paperRef, {
-                votes: increment(-1)
-            });
-            
-            // Remove from user's votes
-            const updatedVotes = { ...userVotes };
-            delete updatedVotes[paperId];
-            await setDoc(userVotesRef, {
-                votes: updatedVotes
-            }, { merge: true });
-        } else {
-            // Add vote
-            await updateDoc(paperRef, {
-                votes: increment(1)
-            });
-            
-            // Add to user's votes
-            await setDoc(userVotesRef, {
-                votes: { ...userVotes, [paperId]: true }
-            }, { merge: true });
-        }
-    } catch (error) {
-        console.error('Error toggling vote:', error);
-    }
-  };
+	  try {
+              const paperRef = doc(db, 'paperVotes', paperId);
+              const userVotesRef = doc(db, 'userVotes', user.uid);
+
+              // Get current vote count
+              const paperVoteDoc = await getDoc(paperRef);
+              const currentVotes = paperVoteDoc.exists() ? paperVoteDoc.data().votes || 0 : 0;
+
+              if (userVotes[paperId]) {
+		  // Remove vote
+		  await updateDoc(paperRef, {
+                      votes: Math.max(0, currentVotes - 1)
+		  });
+		  
+		  const updatedVotes = { ...userVotes };
+		  delete updatedVotes[paperId];
+		  await setDoc(userVotesRef, {
+                      votes: updatedVotes
+		  });
+              } else {
+		  // Add vote
+		  await updateDoc(paperRef, {
+                      votes: currentVotes + 1
+		  });
+		  
+		  await setDoc(userVotesRef, {
+                      votes: { ...userVotes, [paperId]: true }
+		  }, { merge: true });
+              }
+	  } catch (error) {
+              console.error('Error toggling vote:', error);
+	  }
+      };
 
   const renderVoteButton = (paper) => {
     if (!user) {
