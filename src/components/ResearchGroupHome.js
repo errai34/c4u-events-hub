@@ -48,13 +48,17 @@ const ResearchGroupHome = () => {
             />
           </Tabs.Content>
 
-          <Tabs.Content 
+	  <Tabs.Content 
             value="papers"
             className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">Paper Suggestions</h2>
-            <p className="text-gray-600">Coming soon: Submit and browse paper suggestions</p>
-          </Tabs.Content>
+	  >
+	  <h2 className="text-xl font-semibold mb-4 text-gray-900">Paper Suggestions</h2>
+	  <iframe 
+      src="https://forms.gle/YLN1pSxp6Sdu9nCT8"
+      className="w-full h-[800px] border-0"
+      title="Paper Suggestions Form"
+	  />
+	  </Tabs.Content>
 
           <Tabs.Content 
             value="voting"
