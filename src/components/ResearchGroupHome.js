@@ -1,4 +1,5 @@
 import React from 'react';
+import PaperVoting from '../pages/PaperVoting';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Calendar, BookOpen, Vote } from 'lucide-react';
 
@@ -60,13 +61,12 @@ const ResearchGroupHome = () => {
 	  />
 	  </Tabs.Content>
 
-          <Tabs.Content 
-            value="voting"
-            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-          >
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">Paper Voting</h2>
-            <p className="text-gray-600">Coming soon: Vote on papers for discussion</p>
-          </Tabs.Content>
+	  <Tabs.Content 
+      value="voting"
+      className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+	  >
+	  <PaperVoting />
+	  </Tabs.Content>
         </Tabs.Root>
       </div>
     </div>

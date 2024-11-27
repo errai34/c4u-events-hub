@@ -1,0 +1,77 @@
+import React, { useState, useEffect } from 'react';
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+
+const PaperVoting = () => {
+  const [papers, setPapers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const db = getFirestore();
+
+  useEffect(() => {
+    // Fetch papers from Google Sheets
+    const fetchPapers = async () => {
+      try {
+        // We'll implement the Google Sheets API integration here
+        const response = await fetch('YOUR_GOOGLE_SHEETS_API_ENDPOINT');
+        const data = await response.json();
+        setPapers(data);
+      } catch (error) {
+        console.error('Error fetching papers:', error);
+      }
+      setLoading(false);
+    };
+
+    fetchPapers();
+  }, []);
+
+  const handleVote = async (paperId) => {
+    try {
+      // Update vote count in Firebase
+      const paperRef = doc(db, 'paperVotes', paperId);
+      await updateDoc(paperRef, {
+        votes: increment(1)
+      });
+    } catch (error) {
+      console.error('Error voting:', error);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-6">Paper Voting</h2>
+      {loading ? (
+        <p>Loading papers...</p>
+      ) : (
+        <div className="grid gap-6">
+          {papers.sort((a, b) => b.votes - a.votes).map((paper) => (
+            <div key={paper.id} className="bg-white rounded-lg shadow p-6 border">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">
+                    {paper.url ? (
+                      <a href={paper.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        {paper.title || paper.url}
+                      </a>
+                    ) : (
+                      paper.title
+                    )}
+                  </h3>
+                  <p className="text-gray-600 mb-2">{paper.justification}</p>
+                  <p className="text-sm text-gray-500">Proposed by: {paper.presenter}</p>
+                </div>
+                <button
+                  onClick={() => handleVote(paper.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100"
+                >
+                  <span>👍</span>
+                  <span>{paper.votes || 0}</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PaperVoting;
