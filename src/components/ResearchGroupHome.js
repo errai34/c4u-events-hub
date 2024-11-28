@@ -1,7 +1,7 @@
 import React from 'react';
 import PaperVoting from '../pages/PaperVoting';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Calendar, BookOpen, Vote } from 'lucide-react';
+import { Calendar, BookOpen, Vote, Check } from 'lucide-react';
 
 const ResearchGroupHome = () => {
   return (
@@ -35,6 +35,13 @@ const ResearchGroupHome = () => {
               <Vote className="w-4 h-4" />
               <span>Paper Voting</span>
             </Tabs.Trigger>
+            <Tabs.Trigger 
+              className="group flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:text-blue-600 outline-none cursor-pointer"
+              value="presented"
+            >
+              <Check className="w-4 h-4" />
+              <span>Presented Papers</span>
+            </Tabs.Trigger>
           </Tabs.List>
 
           <Tabs.Content 
@@ -49,24 +56,31 @@ const ResearchGroupHome = () => {
             />
           </Tabs.Content>
 
-	  <Tabs.Content 
+          <Tabs.Content 
             value="papers"
             className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-	  >
-	  <h2 className="text-xl font-semibold mb-4 text-gray-900">Paper Suggestions</h2>
-	  <iframe 
-      src="https://forms.gle/YLN1pSxp6Sdu9nCT8"
-      className="w-full h-[800px] border-0"
-      title="Paper Suggestions Form"
-	  />
-	  </Tabs.Content>
+          >
+            <h2 className="text-xl font-semibold mb-4 text-gray-900">Paper Suggestions</h2>
+            <iframe 
+              src="https://forms.gle/YLN1pSxp6Sdu9nCT8"
+              className="w-full h-[800px] border-0"
+              title="Paper Suggestions Form"
+            />
+          </Tabs.Content>
 
-	  <Tabs.Content 
-      value="voting"
-      className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-	  >
-	  <PaperVoting />
-	  </Tabs.Content>
+          <Tabs.Content 
+            value="voting"
+            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+          >
+            <PaperVoting />
+          </Tabs.Content>
+
+          <Tabs.Content 
+            value="presented"
+            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+          >
+            <PaperVoting presentedOnly={true} />
+          </Tabs.Content>
         </Tabs.Root>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { collection, doc, updateDoc, increment, getDoc, setDoc, onSnapshot } fro
 import { signInWithPopup } from 'firebase/auth';
 import { db, auth, googleProvider } from '../firebase';
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxXQo_0Ntl_ooK93OF25w4BryPTyb8MtaixtJqQOEEvSdjSo_jGYZN9V3Xa8grjvR2/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbymaihSFzJhauKZKUZltxo_kltEwKaIV3yp8rq_yJzMklUIg1KWUPtObS1ZEZ4WULaH/exec';
 const CORS_PROXY = 'https://corsproxy.io/?';
 
 const extractArxivId = (url) => {
@@ -22,7 +22,7 @@ const formatAuthors = (authors) => {
   return `${authors.slice(0, 3).join(', ')} et al.`;
 };
 
-const PaperVoting = () => {
+const PaperVoting = ({ presentedOnly = false }) => {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [votes, setVotes] = useState({});
@@ -46,6 +46,7 @@ const PaperVoting = () => {
   const fetchArxivMetadata = async (arxivId) => {
     try {
       const response = await fetch(`${CORS_PROXY}https://export.arxiv.org/api/query?id_list=${arxivId}`);
+      
       const text = await response.text();
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(text, 'text/xml');
@@ -166,13 +167,10 @@ const PaperVoting = () => {
 
   const handleSignIn = async () => {
   try {
-    console.log('Starting sign in process...');
     const result = await signInWithPopup(auth, googleProvider);
-    console.log('Sign in successful:', result.user.email);
   } catch (error) {
     console.error('Authentication error:', error);
     if (error.code === 'auth/popup-closed-by-user') {
-      console.log('User closed the popup');
     } else if (error.code === 'auth/unauthorized-domain') {
       console.error('This domain is not authorized for OAuth operations');
     }
@@ -252,30 +250,34 @@ const PaperVoting = () => {
     );
   };
 
-return (
+
+  const filteredPapers = papers
+      .filter(paper => {
+
+          const isPaperPresented = paper.presented === true || paper.presented === "true";
+          const shouldShow = presentedOnly ? isPaperPresented : !isPaperPresented;
+          
+          return shouldShow;
+      })
+      .sort((a, b) => {
+          if (presentedOnly) {
+              return new Date(b.timestamp) - new Date(a.timestamp);
+          }
+          return (votes[b.id] || 0) - (votes[a.id] || 0);
+      });
+  
+  return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Paper Voting</h2>
-        {user ? (
-          <div className="text-sm text-gray-600">
-            Signed in as {user.email}
-          </div>
-        ) : (
-          <button
-            onClick={() => signInWithPopup(auth, googleProvider)}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Sign in to vote
-          </button>
-        )}
-      </div>
+      <h2 className="text-2xl font-bold mb-6">
+        {presentedOnly ? "Presented Papers" : "Paper Voting"}
+      </h2>
       {loading ? (
         <p>Loading papers...</p>
-      ) : papers.length === 0 ? (
-        <p>No papers available for voting</p>
+      ) : filteredPapers.length === 0 ? (
+        <p>No {presentedOnly ? "presented" : ""} papers available</p>
       ) : (
         <div className="grid gap-6">
-          {papers.sort((a, b) => (votes[b.id] || 0) - (votes[a.id] || 0)).map((paper) => (
+          {filteredPapers.map((paper) => (
             <div key={paper.id} className="bg-white rounded-lg shadow p-6 border">
               <div className="flex justify-between items-start">
                 <div className="flex-grow pr-6">
@@ -297,25 +299,32 @@ return (
                     {paper.justification}
                   </p>
                   <p className="text-sm text-gray-500">Suggested presenter(s): {paper.presenter}</p>
-                  </div>
-		  <button
-	      onClick={() => handleVote(paper.id)}
-	      className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
-		  userVotes[paper.id] 
-		      ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
-		      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-	      }`}
-		  >
-		  <span>👍</span>
-		  <span>{votes[paper.id] || 0}</span>
-		  </button>
+                </div>
+                {!presentedOnly && (
+                  <button
+                    onClick={() => handleVote(paper.id)}
+                    className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full ${
+                      userVotes[paper.id] 
+                        ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
+                        : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                    }`}
+                  >
+                    <span>👍</span>
+                    <span>{votes[paper.id] || 0}</span>
+                  </button>
+                )}
               </div>
+              {presentedOnly && (
+                <div className="mt-2 text-sm text-gray-500">
+                  Presented on: {new Date(paper.timestamp).toLocaleDateString()}
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
     </div>
   );
-  };
+};
       
 export default PaperVoting;
