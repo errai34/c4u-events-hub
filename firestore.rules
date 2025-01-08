@@ -2,11 +2,40 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // All authenticated users can read/write ANY collection/document
-    // in the Firestore. 
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // Existing rules for events
+    match /events/{eventId} {
+      // Everyone can read
+      allow read: if true;
+
+      // Must be signed in to create
+      allow create: if request.auth != null;
+
+      // Must be signed in to update (e.g., join or leave)
+      allow update: if request.auth != null;
+
+      // Only the owner can delete
+      allow delete: if request.auth != null 
+                    && request.auth.uid == resource.data.postedBy;
     }
+
+    // paperVotes rules
+    match /paperVotes/{paperId} {
+      // Everyone can read vote counts (no sign-in needed)
+      allow read: if true;
+
+      // Must be signed in to create/update (increment votes)
+      allow create, update: if request.auth != null;
+
+      // (Optional) disallow delete entirely or restrict further if you want
+    }
+
+    // userVotes rules
+    match /userVotes/{userId} {
+      // Only that user can read or edit their personal votes
+      allow read, create, update: if request.auth != null 
+                                  && request.auth.uid == userId;
+    }
+
   }
 }

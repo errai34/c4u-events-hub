@@ -1,14 +1,14 @@
 // src/pages/PaperVoting.js
 import React, { useState, useEffect, useContext } from 'react';
 import { collection, doc, updateDoc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';                // Shared Firestore instance
-import { AuthContext } from '../context/AuthContext'; // Contains { user, signIn }
+import { db } from '../firebase';
+import { AuthContext } from '../context/AuthContext';
 
 // External script & proxy endpoints
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbymaihSFzJhauKZKUZltxo_kltEwKaIV3yp8rq_yJzMklUIg1KWUPtObS1ZEZ4WULaH/exec';
 const CORS_PROXY = 'https://corsproxy.io/?';
 
-// Utility functions to parse metadata from arXiv/OpenReview/Generic
+// Helper functions
 const extractArxivId = (url) => {
   const match = url.match(/arxiv\.org\/(?:abs|pdf)\/(\d+\.\d+)/);
   return match ? match[1] : null;
@@ -26,22 +26,25 @@ const formatAuthors = (authors) => {
 };
 
 const PaperVoting = ({ presentedOnly = false }) => {
-  // We get the current user and signIn function from AuthContext
   const { user, signIn } = useContext(AuthContext);
 
-  // Local state
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [votes, setVotes] = useState({});       // { [paperId]: numberOfVotes }
-  const [userVotes, setUserVotes] = useState({}); // { [paperId]: true } for papers user voted for
 
-  // Fetch the user's votes from Firestore whenever user changes
+  // votes = { [paperId]: numberOfVotes }
+  const [votes, setVotes] = useState({});
+
+  // userVotes = { [paperId]: true } if user has voted that paper
+  const [userVotes, setUserVotes] = useState({});
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1) Listen for user’s personal votes in 'userVotes/{user.uid}'
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) {
       setUserVotes({});
       return;
     }
-
     const userVotesRef = doc(db, 'userVotes', user.uid);
     const unsubscribe = onSnapshot(userVotesRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -51,11 +54,12 @@ const PaperVoting = ({ presentedOnly = false }) => {
         setUserVotes({});
       }
     });
-
     return () => unsubscribe();
   }, [user]);
 
-  // Listen for vote counts in 'paperVotes' collection
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2) Listen for global vote counts in the 'paperVotes' collection
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const votesRef = collection(db, 'paperVotes');
     const unsubscribe = onSnapshot(votesRef, (snapshot) => {
@@ -66,65 +70,71 @@ const PaperVoting = ({ presentedOnly = false }) => {
       });
       setVotes(votesData);
     });
-
     return () => unsubscribe();
   }, []);
 
-  // Fetch paper suggestions from your Google Sheets script, then fetch metadata
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3) Fetch paper suggestions from the Google Sheets script
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchPapers = async () => {
       try {
         const response = await fetch(GOOGLE_SCRIPT_URL);
         const data = await response.json();
 
-        // For each paper, ensure it exists in 'paperVotes' with a non-negative vote count
-        // Also fetch metadata (arXiv, OpenReview, or generic site)
+        // Debug: see if new papers are in `data`
+        console.log('[PaperVoting] Raw data from script:', data);
+
+        // For each paper, ensure it has a Firestore vote entry & fetch metadata
         const papersWithMetadata = await Promise.all(
           data.map(async (paper) => {
-            // Ensure Firestore has an entry for this paper's vote count
+            // 3a) Ensure Firestore has { votes: 0 } if paper.id doesn't exist
             const voteRef = doc(db, 'paperVotes', paper.id);
             const voteDoc = await getDoc(voteRef);
-
             if (!voteDoc.exists()) {
               await setDoc(voteRef, {
                 votes: 0,
                 initializedAt: new Date().toISOString()
               });
             } else {
-              // If votes is not a valid number, reset to 0
               const currentVotes = voteDoc.data().votes;
               if (typeof currentVotes !== 'number' || currentVotes < 0) {
                 await updateDoc(voteRef, { votes: 0 });
               }
             }
 
-            // Attempt to fetch metadata from known sources
-            if (!paper.url.startsWith('http')) {
-              // If it's not a valid URL, just store title as the url
-              return { ...paper, title: paper.url, authors: null };
+            // 3b) Possibly fetch metadata from arXiv/OpenReview/generic
+            // If paper.url missing or not http, skip
+            const url = paper.url || '';
+            if (!url.startsWith('http')) {
+              return { ...paper, title: paper.url || 'No URL', authors: null };
             }
 
-            if (paper.url.includes('arxiv.org')) {
-              const arxivId = extractArxivId(paper.url);
+            // If arXiv
+            if (url.includes('arxiv.org')) {
+              const arxivId = extractArxivId(url);
               if (arxivId) {
                 const meta = await fetchArxivMetadata(arxivId);
                 return { ...paper, ...meta };
               }
             }
 
-            if (paper.url.includes('openreview.net')) {
-              const openReviewId = extractOpenReviewId(paper.url);
+            // If OpenReview
+            if (url.includes('openreview.net')) {
+              const openReviewId = extractOpenReviewId(url);
               if (openReviewId) {
                 const meta = await fetchOpenReviewMetadata(openReviewId);
                 return { ...paper, ...meta };
               }
             }
 
-            // Otherwise, do a generic fetch
-            const genericMeta = await fetchGenericMetadata(paper.url);
+            // Otherwise generic
+            const genericMeta = await fetchGenericMetadata(url);
             return { ...paper, ...genericMeta };
           })
         );
+
+        console.log('[PaperVoting] After fetching metadata:', papersWithMetadata);
 
         setPapers(papersWithMetadata);
       } catch (error) {
@@ -136,7 +146,9 @@ const PaperVoting = ({ presentedOnly = false }) => {
     fetchPapers();
   }, []);
 
-  // Functions to fetch metadata from different sources
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers to fetch metadata
+  // ─────────────────────────────────────────────────────────────────────────
   const fetchArxivMetadata = async (arxivId) => {
     try {
       const response = await fetch(`${CORS_PROXY}https://export.arxiv.org/api/query?id_list=${arxivId}`);
@@ -147,7 +159,7 @@ const PaperVoting = ({ presentedOnly = false }) => {
       const entry = xmlDoc.querySelector('entry');
       const title = entry?.querySelector('title')?.textContent.trim();
       const authorNodes = entry?.querySelectorAll('author > name');
-      const authors = Array.from(authorNodes || []).map((node) => node.textContent.trim());
+      const authors = Array.from(authorNodes || []).map(node => node.textContent.trim());
 
       return { title, authors: formatAuthors(authors) };
     } catch (error) {
@@ -193,7 +205,9 @@ const PaperVoting = ({ presentedOnly = false }) => {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   // Voting logic
+  // ─────────────────────────────────────────────────────────────────────────
   const handleVote = async (paperId) => {
     if (!user) {
       // If not signed in, trigger sign in
@@ -212,7 +226,6 @@ const PaperVoting = ({ presentedOnly = false }) => {
       if (userVotes[paperId]) {
         // If user already voted for this paper, remove vote
         await updateDoc(paperRef, { votes: Math.max(0, currentVotes - 1) });
-
         const updatedVotes = { ...userVotes };
         delete updatedVotes[paperId];
         await setDoc(userVotesRef, { votes: updatedVotes });
@@ -230,23 +243,27 @@ const PaperVoting = ({ presentedOnly = false }) => {
     }
   };
 
-  // Filter out or in "presented" papers
-  // Sort by votes descending (or by presented date)
+  // ─────────────────────────────────────────────────────────────────────────
+  // Filter out or in "presented" papers & sort
+  // ─────────────────────────────────────────────────────────────────────────
   const filteredPapers = papers
     .filter((paper) => {
-      const isPaperPresented = paper.presented === true || paper.presented === "true";
-      return presentedOnly ? isPaperPresented : !isPaperPresented;
+      // 'paper.presented' might be boolean or string "true"
+      const isPresented = paper.presented === true || paper.presented === "true";
+      return presentedOnly ? isPresented : !isPresented;
     })
     .sort((a, b) => {
       if (presentedOnly) {
-        // For presented papers, sort descending by timestamp
+        // For presented papers, sort descending by 'timestamp' if it exists
         return new Date(b.timestamp) - new Date(a.timestamp);
       }
       // For unpresented papers, sort by vote count descending
       return (votes[b.id] || 0) - (votes[a.id] || 0);
     });
 
+  // ─────────────────────────────────────────────────────────────────────────
   // Render
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-6">
@@ -263,14 +280,17 @@ const PaperVoting = ({ presentedOnly = false }) => {
             <div key={paper.id} className="bg-white rounded-lg shadow p-6 border">
               <div className="flex justify-between items-start">
                 <div className="flex-grow pr-6">
+                  {/* Title */}
                   {paper.title && (
                     <h3 className="text-lg font-bold mb-1">{paper.title}</h3>
                   )}
+                  {/* Authors */}
                   {paper.authors && (
                     <p className="text-sm text-gray-600 mb-2">{paper.authors}</p>
                   )}
-                  <p className="text-md mb-2">
-                    {paper.url?.startsWith('http') && (
+                  {/* URL */}
+                  {paper.url && paper.url.startsWith('http') && (
+                    <p className="text-md mb-2">
                       <a
                         href={paper.url}
                         target="_blank"
@@ -279,14 +299,16 @@ const PaperVoting = ({ presentedOnly = false }) => {
                       >
                         {paper.url}
                       </a>
-                    )}
-                  </p>
+                    </p>
+                  )}
+                  {/* Justification */}
                   {paper.justification && (
                     <p className="text-gray-600 mb-2">
                       <span className="font-medium">Justification: </span>
                       {paper.justification}
                     </p>
                   )}
+                  {/* Presenter */}
                   {paper.presenter && (
                     <p className="text-sm text-gray-500">
                       Suggested presenter(s): {paper.presenter}
@@ -294,7 +316,7 @@ const PaperVoting = ({ presentedOnly = false }) => {
                   )}
                 </div>
 
-                {/* Only show "Like" button if not presented */}
+                {/* Vote button (only if not presented) */}
                 {!presentedOnly && (
                   <button
                     onClick={() => handleVote(paper.id)}
@@ -310,7 +332,7 @@ const PaperVoting = ({ presentedOnly = false }) => {
                 )}
               </div>
 
-              {/* If it's a presented paper, show presentation date */}
+              {/* Show presentation date if it's in presented tab */}
               {presentedOnly && paper.timestamp && (
                 <div className="mt-2 text-sm text-gray-500">
                   Presented on: {new Date(paper.timestamp).toLocaleDateString()}
