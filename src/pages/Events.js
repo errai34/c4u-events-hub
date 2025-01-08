@@ -1,42 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
-
-// Firebase config
-const firebaseConfig = {
-  apiKey: "AIzaSyB2SDQyc9-3Ih99F5R3-yedY29IfsktxQc",
-  authDomain: "c4u-events-hub.firebaseapp.com",
-  projectId: "c4u-events-hub",
-  storageBucket: "c4u-events-hub.firebasestorage.app",
-  messagingSenderId: "1051696323890",
-  appId: "1:1051696323890:web:429d8268a1e1845284cb2b"
-};
-
-// Initialize Firebase
-console.log("Starting Firebase initialization...");
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-console.log("Firebase initialized!");
+// src/pages/Events.js
+import React, { useState, useEffect, useContext } from 'react';
+import { collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { AuthContext } from '../context/AuthContext';
 
 const EVENT_CATEGORIES = [
-  "Seminar",
-  "Study Group",
-  "Workshop",
-  "Hackathon",
+  "Research Meeting",
   "Talk",
   "Journal Club",
-  "Reading Group",
+  "Workshop",
+  "Hackathon",
+  "Conference",
   "Social",
-  "Research Meeting",
   "Other"
 ];
 
 const Events = () => {
-  // State management
+  const { user } = useContext(AuthContext);
+
   const [events, setEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
-  const [name, setName] = useState(localStorage.getItem('userName') || '');
-  const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -54,30 +37,26 @@ const Events = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Firebase listener setup
+  // Listen to Firestore "events" collection
   useEffect(() => {
-    console.log("Setting up Firebase listener...");
-    try {
-      const unsubscribe = onSnapshot(collection(db, "events"), (snapshot) => {
-        console.log("Got Firebase snapshot, size:", snapshot.size);
-        const eventsData = [];
-        snapshot.forEach((doc) => {
-          eventsData.push({ id: doc.id, ...doc.data() });
-        });
+    const unsubscribe = onSnapshot(
+      collection(db, "events"),
+      (snapshot) => {
+        const eventsData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }));
         setEvents(eventsData);
         setLoading(false);
-      }, (error) => {
-        console.error("Firebase snapshot error:", error);
-        setError("Failed to load events: " + error.message);
+      },
+      (err) => {
+        console.error("Firebase snapshot error:", err);
+        setError("Failed to load events: " + err.message);
         setLoading(false);
-      });
+      }
+    );
 
-      return () => unsubscribe();
-    } catch (err) {
-      console.error("Firebase setup error:", err);
-      setError("Failed to setup Firebase: " + err.message);
-      setLoading(false);
-    }
+    return () => unsubscribe();
   }, []);
 
   // Filter and sort events
@@ -86,36 +65,33 @@ const Events = () => {
 
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(event => 
-        event.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.location?.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter((ev) =>
+        ev.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ev.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ev.location?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     // Category filter
     if (selectedCategory) {
-      filtered = filtered.filter(event => event.category === selectedCategory);
+      filtered = filtered.filter((ev) => ev.category === selectedCategory);
     }
 
     // Past events filter
     if (!showPastEvents) {
-      filtered = filtered.filter(event => new Date(event.date) >= new Date());
+      filtered = filtered.filter((ev) => new Date(ev.date) >= new Date());
     }
 
     // Sort events
-    filtered.sort((a, b) => {
-      if (sortBy === 'attendees') {
-        return (b.attendees?.length || 0) - (a.attendees?.length || 0);
-      } else {
-        return new Date(a.date) - new Date(b.date);
-      }
-    });
+    if (sortBy === 'attendees') {
+      filtered.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0));
+    } else {
+      filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
 
     setFilteredEvents(filtered);
   }, [events, searchTerm, selectedCategory, sortBy, showPastEvents]);
 
-  // Helper functions
   const showSuccess = (message) => {
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(''), 3000);
@@ -129,37 +105,46 @@ const Events = () => {
       timeObj.setHours(hours);
       timeObj.setMinutes(minutes);
       return timeObj.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    } catch (e) {
+    } catch {
       return time;
     }
   };
 
-  const handleNameSet = (newName) => {
-    console.log("Setting name:", newName);
-    if (newName.trim()) {
-      localStorage.setItem('userName', newName.trim());
-      setName(newName.trim());
-      setShowNamePrompt(false);
-    }
-  };
-
+  // ─────────────────────────────────────────────────────────────────────────
   // Event handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Create a new event
   const handleAddEvent = async (e) => {
     e.preventDefault();
-    if (!name) {
-      setShowNamePrompt(true);
+    if (!user) {
+      alert("Please sign in from the top navigation first.");
       return;
     }
-    
+
     setLoading(true);
     try {
       await addDoc(collection(db, "events"), {
         ...newEvent,
         createdAt: new Date().toISOString(),
-        postedBy: name,
-        attendees: [name]
+        postedBy: user.uid,
+        // Store the first attendee as an object
+        attendees: [
+          {
+            uid: user.uid,
+            name: user.displayName || user.email || "Unknown User"
+          }
+        ]
       });
-      setNewEvent({ title: '', date: '', time: '', location: '', description: '', category: '' });
+
+      setNewEvent({
+        title: '',
+        date: '',
+        time: '',
+        location: '',
+        description: '',
+        category: ''
+      });
       showSuccess('Event created successfully! 🎉');
     } catch (err) {
       setError("Failed to add event: " + err.message);
@@ -167,21 +152,37 @@ const Events = () => {
     setLoading(false);
   };
 
+  // Join an event
   const handleJoin = async (eventId) => {
-    if (!name) {
-      setShowNamePrompt(true);
+    if (!user) {
+      alert("Please sign in from the top navigation first.");
       return;
     }
-    
+
     setLoading(true);
     try {
       const eventRef = doc(db, "events", eventId);
-      const event = events.find(e => e.id === eventId);
-      const attendees = event.attendees || [];
-      if (!attendees.includes(name)) {
-        await updateDoc(eventRef, {
-          attendees: [...attendees, name]
-        });
+      const ev = events.find((e) => e.id === eventId);
+
+      // Normalize old "attendees" arrays that might be just string UIDs
+      const oldAttendees = ev.attendees || [];
+      const normalizedAttendees = oldAttendees.map((a) => {
+        return typeof a === "string" ? { uid: a, name: "" } : a;
+      });
+
+      // Check if this user is already in the event
+      const alreadyJoined = normalizedAttendees.some((a) => a.uid === user.uid);
+      if (alreadyJoined) {
+        showSuccess("You're already in this event!");
+      } else {
+        // Add this user as { uid, name }
+        const newAttendee = {
+          uid: user.uid,
+          name: user.displayName || user.email || "Unknown User"
+        };
+        const updatedAttendees = [...normalizedAttendees, newAttendee];
+
+        await updateDoc(eventRef, { attendees: updatedAttendees });
         showSuccess("You've joined the event! 🎉");
       }
     } catch (err) {
@@ -190,6 +191,7 @@ const Events = () => {
     setLoading(false);
   };
 
+  // Leave an event
   const handleLeave = async (eventId) => {
     setShowConfirmModal({
       title: "Leave Event",
@@ -198,11 +200,19 @@ const Events = () => {
         setLoading(true);
         try {
           const eventRef = doc(db, "events", eventId);
-          const event = events.find(e => e.id === eventId);
-          const attendees = event.attendees || [];
-          await updateDoc(eventRef, {
-            attendees: attendees.filter(attendee => attendee !== name)
+          const ev = events.find((e) => e.id === eventId);
+          const oldAttendees = ev.attendees || [];
+
+          // Normalize older string-based attendees to objects
+          const normalizedAttendees = oldAttendees.map((a) => {
+            return typeof a === "string" ? { uid: a, name: "" } : a;
           });
+
+          const updated = normalizedAttendees.filter(
+            (a) => a.uid !== user.uid
+          );
+
+          await updateDoc(eventRef, { attendees: updated });
           showSuccess("You've left the event");
         } catch (err) {
           setError("Failed to leave event: " + err.message);
@@ -213,6 +223,7 @@ const Events = () => {
     });
   };
 
+  // Delete an event (only creator)
   const handleDelete = async (eventId) => {
     setShowConfirmModal({
       title: "Delete Event",
@@ -231,53 +242,45 @@ const Events = () => {
     });
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '24px', margin: 0 }}>C4U Relevant Events @Stanford 🎓</h1>
-        {name ? (
-          <div>
-            Hi, {name}! 👋
-            <button 
-              onClick={() => setName('')}
-              style={{ marginLeft: '10px', color: '#4444ff', border: 'none', background: 'none', cursor: 'pointer' }}
-            >
-              (change)
-            </button>
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '24px', margin: 0 }}>
+          C4U Relevant Events @Stanford 🎓
+        </h1>
+        {user ? (
+          <div style={{ marginTop: '8px' }}>
+            Hi, {user.displayName || user.email || 'User'}! 👋
           </div>
         ) : (
-          <button
-            onClick={() => setShowNamePrompt(true)}
-            style={{
-              padding: '8px 16px',
-              background: '#4444ff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            Join here 🎉
-          </button>
+          <div style={{ marginTop: '8px', color: '#666' }}>
+            You are not signed in. Please sign in from the top navigation to join or create events.
+          </div>
         )}
       </div>
 
-      {/* Search and Filter Section */}
-      <div style={{ 
-        background: 'white',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        marginBottom: '20px'
-      }}>
+      {/* Search + Filter Section */}
+      <div
+        style={{
+          background: 'white',
+          padding: '20px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          marginBottom: '20px'
+        }}
+      >
         <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
           <input
             type="text"
             placeholder="Search events..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ 
+            style={{
               flex: 1,
               padding: '8px',
               borderRadius: '4px',
@@ -294,8 +297,8 @@ const Events = () => {
             }}
           >
             <option value="">All Categories</option>
-            {EVENT_CATEGORIES.map(category => (
-              <option key={category} value={category}>{category}</option>
+            {EVENT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
           </select>
         </div>
@@ -324,24 +327,37 @@ const Events = () => {
       </div>
 
       {/* Add Event Form */}
-      <div style={{ 
-        background: 'white',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        marginBottom: '20px'
-      }}>
-        <h2 style={{ marginTop: 0, 
-        fontSize: '1.1rem',  // Reduced from 1.5rem
-        color: '#2E2D4D', 
-        lineHeight: 1.3 }}>Where the Universe Decoders meet AI & ML 🪐.</h2>
+      <div
+        style={{
+          background: 'white',
+          padding: '20px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          marginBottom: '20px'
+        }}
+      >
+        <h2
+          style={{
+            marginTop: 0,
+            fontSize: '1.1rem',
+            color: '#2E2D4D',
+            lineHeight: 1.3
+          }}
+        >
+          Where the Universe Decoders meet AI & ML 🪐.
+        </h2>
 
-        <form onSubmit={handleAddEvent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <form
+          onSubmit={handleAddEvent}
+          style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+        >
           <input
             type="text"
             placeholder="What's happening? (e.g., ML Study Group)"
             value={newEvent.title}
-            onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))}
+            onChange={(e) =>
+              setNewEvent((prev) => ({ ...prev, title: e.target.value }))
+            }
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
             required
           />
@@ -349,42 +365,69 @@ const Events = () => {
             <input
               type="date"
               value={newEvent.date}
-              onChange={e => setNewEvent(prev => ({ ...prev, date: e.target.value }))}
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', flex: 1 }}
+              onChange={(e) =>
+                setNewEvent((prev) => ({ ...prev, date: e.target.value }))
+              }
+              style={{
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                flex: 1
+              }}
               required
             />
             <input
               type="time"
               value={newEvent.time}
-              onChange={e => setNewEvent(prev => ({ ...prev, time: e.target.value }))}
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', flex: 1 }}
+              onChange={(e) =>
+                setNewEvent((prev) => ({ ...prev, time: e.target.value }))
+              }
+              style={{
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                flex: 1
+              }}
               required
             />
             <input
               type="text"
               placeholder="Where? 📍"
               value={newEvent.location}
-              onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))}
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', flex: 1 }}
+              onChange={(e) =>
+                setNewEvent((prev) => ({ ...prev, location: e.target.value }))
+              }
+              style={{
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                flex: 1
+              }}
               required
             />
           </div>
           <select
             value={newEvent.category}
-            onChange={e => setNewEvent(prev => ({ ...prev, category: e.target.value }))}
+            onChange={(e) =>
+              setNewEvent((prev) => ({ ...prev, category: e.target.value }))
+            }
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
             required
           >
             <option value="">Select Category</option>
-            {EVENT_CATEGORIES.map(category => (
-              <option key={category} value={category}>{category}</option>
+            {EVENT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
           </select>
           <input
             type="text"
             placeholder="Add a fun description! 💭"
             value={newEvent.description}
-            onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))}
+            onChange={(e) =>
+              setNewEvent((prev) => ({ ...prev, description: e.target.value }))
+            }
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
           />
           <button
@@ -406,33 +449,47 @@ const Events = () => {
       {/* Events List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         {filteredEvents.length === 0 ? (
-          <div style={{ 
-            padding: '20px', 
-            background: '#f8f8f8', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            {searchTerm || selectedCategory ? 
-              'No events found matching your criteria 🔍' : 
-              'No events yet! Be the first to share one! 🌟'}
+          <div
+            style={{
+              padding: '20px',
+              background: '#f8f8f8',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}
+          >
+            {searchTerm || selectedCategory
+              ? 'No events found matching your criteria 🔍'
+              : 'No events yet! Be the first to share one! 🌟'}
           </div>
         ) : (
-          filteredEvents.map(event => (
-            <div 
-              key={event.id} 
+          filteredEvents.map((ev) => (
+            <div
+              key={ev.id}
               style={{
                 background: 'white',
                 padding: '20px',
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
+            >
+              {/* Event Header / Title */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: '10px'
+                }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px' }}>{event.title}</h3>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    {event.attendees?.includes(name) ? (
+                <h3 style={{ margin: 0, fontSize: '18px' }}>{ev.title}</h3>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {/* Join / Leave logic */}
+                  {user ? (
+                    // Already in attendees?
+                    ev.attendees?.some((a) =>
+                      typeof a === "object" ? a.uid === user.uid : a === user.uid
+                    ) ? (
                       <button
-                        onClick={() => handleLeave(event.id)}
+                        onClick={() => handleLeave(ev.id)}
                         style={{
                           padding: '8px 16px',
                           background: '#ff8800',
@@ -446,7 +503,7 @@ const Events = () => {
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleJoin(event.id)}
+                        onClick={() => handleJoin(ev.id)}
                         style={{
                           padding: '8px 16px',
                           background: '#4444ff',
@@ -458,60 +515,103 @@ const Events = () => {
                       >
                         Sign up 🤝
                       </button>
-                    )}
-                    {event.postedBy === name && (
-                      <button
-                        onClick={() => handleDelete(event.id)}
-                        style={{
-                          padding: '8px 16px',
-                          background: '#ff4444',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Delete 🗑️
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                <div style={{ color: '#666666', marginBottom: '10px' }}>
-                  📅 {new Date(event.date).toLocaleDateString()} at {formatTime(event.time)} | 
-                  📍 {event.location} |
-                  🏷️ {event.category} |
-                  👥 {event.attendees?.length || 0} joining
-                </div>
-                
-                {event.description && (
-                  <p style={{ color: '#666666', margin: '10px 0' }}>{event.description}</p>
-                )}
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                  {event.attendees?.map(attendee => (
-                    <span
-                      key={attendee}
+                    )
+                  ) : (
+                    // Not signed in => no button or a disabled button
+                    <button
+                      disabled
                       style={{
-                        padding: '4px 8px',
-                        background: '#e6f0ff',
-                        color: '#4444ff',
-                        borderRadius: '100px',
-                        fontSize: '14px'
+                        padding: '8px 16px',
+                        background: '#999',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'not-allowed'
                       }}
                     >
-                      {attendee}
-                    </span>
-                  ))}
+                      Sign up 🤝
+                    </button>
+                  )}
+
+                  {/* Delete if user is the event owner */}
+                  {user && ev.postedBy === user.uid && (
+                    <button
+                      onClick={() => handleDelete(ev.id)}
+                      style={{
+                        padding: '8px 16px',
+                        background: '#ff4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Delete 🗑️
+                    </button>
+                  )}
                 </div>
               </div>
-            ))
-          )}
-        </div>
-  
-        {/* Name Prompt Modal */}
-        {showNamePrompt && (
-          <div style={{
+
+              {/* Event Info */}
+              <div style={{ color: '#666666', marginBottom: '10px' }}>
+                📅 {new Date(ev.date).toLocaleDateString()} at {formatTime(ev.time)} |{' '}
+                📍 {ev.location} | 🏷️ {ev.category} |{' '}
+                👥 {ev.attendees?.length || 0} joining
+              </div>
+
+              {ev.description && (
+                <p style={{ color: '#666666', margin: '10px 0' }}>
+                  {ev.description}
+                </p>
+              )}
+
+              {/* Attendees List */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {ev.attendees?.map((attendee, index) => {
+                  // If older events used just string UIDs, handle that:
+                  if (typeof attendee === "string") {
+                    return (
+                      <span
+                        key={`${attendee}-${index}`}
+                        style={{
+                          padding: '4px 8px',
+                          background: '#e6f0ff',
+                          color: '#4444ff',
+                          borderRadius: '100px',
+                          fontSize: '14px'
+                        }}
+                      >
+                        {attendee}
+                      </span>
+                    );
+                  } else {
+                    // { uid, name }
+                    return (
+                      <span
+                        key={attendee.uid}
+                        style={{
+                          padding: '4px 8px',
+                          background: '#e6f0ff',
+                          color: '#4444ff',
+                          borderRadius: '100px',
+                          fontSize: '14px'
+                        }}
+                      >
+                        {attendee.name || attendee.uid}
+                      </span>
+                    );
+                  }
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div
+          style={{
             position: 'fixed',
             top: 0,
             left: 0,
@@ -523,112 +623,58 @@ const Events = () => {
             justifyContent: 'center',
             padding: '20px',
             zIndex: 1000
-          }}>
-            <div style={{
+          }}
+        >
+          <div
+            style={{
               background: 'white',
               padding: '20px',
               borderRadius: '8px',
               maxWidth: '400px',
               width: '100%'
-            }}>
-              <h2 style={{ marginTop: 0 }}>What should we call you? 😊</h2>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleNameSet(e.target.name.value);
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>{showConfirmModal.title}</h3>
+            <p>{showConfirmModal.message}</p>
+            <div
+              style={{
+                display: 'flex',
+                gap: '10px',
+                justifyContent: 'flex-end'
+              }}
+            >
+              <button
+                onClick={() => setShowConfirmModal(null)}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  background: 'white'
                 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
               >
-                <input
-                  name="name"
-                  type="text"
-                  placeholder="Your name"
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-                  required
-                  autoFocus
-                />
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowNamePrompt(false)}
-                    style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: '4px', background: 'white' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    style={{
-                      padding: '8px 16px',
-                      background: '#4444ff',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px'
-                    }}
-                  >
-                    Let's Go! 🚀
-                  </button>
-                </div>
-              </form>
+                Cancel
+              </button>
+              <button
+                onClick={showConfirmModal.onConfirm}
+                style={{
+                  padding: '8px 16px',
+                  background: '#ff4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px'
+                }}
+              >
+                Confirm
+              </button>
             </div>
           </div>
-        )}
-  
-        {/* Confirmation Modal */}
-        {showConfirmModal && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-            zIndex: 1000
-          }}>
-            <div style={{
-              background: 'white',
-              padding: '20px',
-              borderRadius: '8px',
-              maxWidth: '400px',
-              width: '100%'
-            }}>
-              <h3 style={{ marginTop: 0 }}>{showConfirmModal.title}</h3>
-              <p>{showConfirmModal.message}</p>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => setShowConfirmModal(null)}
-                  style={{
-                    padding: '8px 16px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    background: 'white'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={showConfirmModal.onConfirm}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#ff4444',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px'
-                  }}
-                >
-                  Confirm
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-  
-        {/* Loading Indicator */}
-        {loading && (
-          <div style={{
+        </div>
+      )}
+
+      {/* Loading Indicator */}
+      {loading && (
+        <div
+          style={{
             position: 'fixed',
             top: '50%',
             left: '50%',
@@ -638,14 +684,16 @@ const Events = () => {
             padding: '20px',
             borderRadius: '8px',
             zIndex: 1000
-          }}>
-            Loading...
-          </div>
-        )}
-  
-        {/* Success Message */}
-        {successMessage && (
-          <div style={{
+          }}
+        >
+          Loading...
+        </div>
+      )}
+
+      {/* Success Message */}
+      {successMessage && (
+        <div
+          style={{
             position: 'fixed',
             bottom: '20px',
             right: '20px',
@@ -655,14 +703,16 @@ const Events = () => {
             borderRadius: '4px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
             zIndex: 1000
-          }}>
-            {successMessage}
-          </div>
-        )}
-  
-        {/* Error Message */}
-        {error && (
-          <div style={{
+          }}
+        >
+          {successMessage}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div
+          style={{
             position: 'fixed',
             bottom: '20px',
             right: '20px',
@@ -672,24 +722,25 @@ const Events = () => {
             borderRadius: '4px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
             zIndex: 1000
-          }}>
-            {error}
-            <button
-              onClick={() => setError(null)}
-              style={{
-                marginLeft: '10px',
-                background: 'none',
-                border: 'none',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-  
-  export default Events;
+          }}
+        >
+          {error}
+          <button
+            onClick={() => setError(null)}
+            style={{
+              marginLeft: '10px',
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Events;
